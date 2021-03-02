@@ -15,4 +15,3 @@
 Линейный классификатор (Linear classifier)
 
 `Linear classifier.ipynb` - следуйте инструкциям в ноутбуке.
-# DL
