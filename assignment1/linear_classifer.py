@@ -176,7 +176,6 @@ class LinearSoftmaxClassifier():
         Returns:
           y_pred, np.array of int (test_samples)
         """
-        y_pred = np.zeros(X.shape[0], dtype=np.int)
 
         y_pred = np.argmax(X @ self.W, axis=1)
 
