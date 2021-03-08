@@ -113,8 +113,8 @@ class ReLULayer:
         # forward pass
         # Hint: you'll need to save some information about X
         # to use it later in the backward pass
-        self.cache = np.maximum(0, X)
-        return self.cache.copy()
+        self.cache = X
+        return np.maximum(0, X)
 
     def backward(self, d_out):
         """
@@ -170,10 +170,10 @@ class FullyConnectedLayer:
         # It should be pretty similar to linear classifier from
         # the previous assignment
 
-        self.W.grad = self.X.T @ d_out
+        self.W.grad += self.X.T @ d_out
 
         # производная dL/dB = d_out(dL/dZ) * вектор из 1 размерности B
-        self.B.grad = np.sum(d_out, axis=0, keepdims=True)
+        self.B.grad += np.sum(d_out, axis=0, keepdims=True)
 
         d_input = d_out @ self.W.value.T
 
