@@ -1,4 +1,4 @@
-import numpy as np
+from assignment3.im2col import *
 
 
 def l2_regularization(W, reg_strength):
@@ -183,6 +183,8 @@ class FullyConnectedLayer:
 
 
 class ConvolutionalLayer:
+    """https://wiseodd.github.io/techblog/2016/07/16/convnet-conv-layer/"""
+
     def __init__(self, in_channels, out_channels,
                  filter_size, padding):
         """
@@ -221,18 +223,15 @@ class ConvolutionalLayer:
 
         # It's ok to use loops for going over width and height
         # but try to avoid having any other loops
-        out = np.zeros((batch_size, out_height, out_width, self.out_channels))
+        X_col = im2col_indices(X, self.filter_size, self.filter_size, padding=self.padding, stride=stride)
 
-        for y in range(out_height):
-            for x in range(out_width):
-                # Implement forward pass for specific location
-                out[:, y, x, :] = np.sum(
-                    X[:, y:self.filter_size + y, x:self.filter_size + x, :, np.newaxis]
-                    * self.W.value[np.newaxis, :],
-                    axis=(1, 2, 3)
-                )
+        W_col = self.W.value.reshape(self.out_channels, -1)
+        out = W_col @ X_col + self.B.value
 
-        return out + self.B.value
+        out = out.reshape(self.out_channels, out_height, out_width, batch_size)
+        out = out.transpose(3, 1, 2, 0)
+
+        return out
 
     def backward(self, d_out):
         # Hint: Forward pass was reduced to matrix multiply
@@ -243,20 +242,30 @@ class ConvolutionalLayer:
         batch_size, height, width, channels = self.X.shape
         _, out_height, out_width, out_channels = d_out.shape
 
-        # TODO: Implement backward pass
+        stride = 1
+        # Implement backward pass
         # Same as forward, setup variables of the right shape that
         # aggregate input gradient and fill them for every location
         # of the output
 
-        # Try to avoid having any other loops here too
-        for y in range(out_height):
-            for x in range(out_width):
-                # TODO: Implement backward pass for specific location
-                # Aggregate gradients for both the input and
-                # the parameters (W and B)
-                pass
+        self.B.grad += np.sum(d_out, axis=(1, 2, 3))
 
-        raise Exception("Not implemented!")
+        d_out_reshaped = d_out.transpose(3, 1, 2, 0).reshape(self.out_channels, -1)
+        X_col = im2col_indices(self.X, self.filter_size, self.filter_size, padding=self.padding, stride=stride)
+
+        dW = d_out_reshaped @ X_col.T
+        dW = dW.reshape(self.W.value.shape)
+        self.W.grad += dW
+
+        W_reshape = self.W.value.reshape(self.out_channels, -1)
+        dX_col = W_reshape.T @ d_out_reshaped
+        d_input = col2im_indices(dX_col, self.X.shape,
+                                 self.filter_size,
+                                 self.filter_size,
+                                 padding=self.padding,
+                                 stride=stride)
+
+        return d_input
 
     def params(self):
         return {'W': self.W, 'B': self.B}
