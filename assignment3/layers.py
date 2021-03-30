@@ -210,8 +210,10 @@ class ConvolutionalLayer:
         self.padding = padding
 
     def forward(self, X):
-        self.X = X
+        self.X = X.copy()
         batch_size, height, width, channels = X.shape
+
+        X = X.transpose(0, 3, 1, 2)
 
         stride = 1
         out_height = int((height - self.filter_size + 2 * self.padding) / stride + 1)
@@ -226,7 +228,7 @@ class ConvolutionalLayer:
         X_col = im2col_indices(X, self.filter_size, self.filter_size, padding=self.padding, stride=stride)
 
         W_col = self.W.value.reshape(self.out_channels, -1)
-        out = W_col @ X_col + self.B.value
+        out = W_col @ X_col + self.B.value.reshape((-1, 1))
 
         out = out.reshape(self.out_channels, out_height, out_width, batch_size)
         out = out.transpose(3, 1, 2, 0)
@@ -248,24 +250,26 @@ class ConvolutionalLayer:
         # aggregate input gradient and fill them for every location
         # of the output
 
-        self.B.grad += np.sum(d_out, axis=(1, 2, 3))
+        X = self.X.transpose(0, 3, 1, 2)
+        X_col = im2col_indices(X, self.filter_size, self.filter_size, padding=self.padding, stride=stride)
+
+        db = np.sum(d_out, axis=(0, 1, 2))
+        self.B.grad += db
 
         d_out_reshaped = d_out.transpose(3, 1, 2, 0).reshape(self.out_channels, -1)
-        X_col = im2col_indices(self.X, self.filter_size, self.filter_size, padding=self.padding, stride=stride)
-
         dW = d_out_reshaped @ X_col.T
         dW = dW.reshape(self.W.value.shape)
         self.W.grad += dW
 
-        W_reshape = self.W.value.reshape(self.out_channels, -1)
-        dX_col = W_reshape.T @ d_out_reshaped
-        d_input = col2im_indices(dX_col, self.X.shape,
-                                 self.filter_size,
-                                 self.filter_size,
-                                 padding=self.padding,
-                                 stride=stride)
+        W_reshaped = self.W.value.reshape(self.out_channels, -1)
+        dX_col = W_reshaped.T @ d_out_reshaped
+        dX = col2im_indices(dX_col, X.shape,
+                            self.filter_size,
+                            self.filter_size,
+                            padding=self.padding,
+                            stride=stride)
 
-        return d_input
+        return dX.transpose(0, 2, 3, 1)
 
     def params(self):
         return {'W': self.W, 'B': self.B}
@@ -285,16 +289,54 @@ class MaxPoolingLayer:
         self.X = None
 
     def forward(self, X):
+        self.X = X.copy()
         batch_size, height, width, channels = X.shape
-        # TODO: Implement maxpool forward pass
+        # Implement maxpool forward pass
         # Hint: Similarly to Conv layer, loop on
         # output x/y dimension
-        raise Exception("Not implemented!")
+
+        X = X.transpose(0, 3, 1, 2)
+
+        h_out = (height - self.pool_size) / self.stride + 1
+        w_out = (width - self.pool_size) / self.stride + 1
+
+        if not w_out.is_integer() or not h_out.is_integer():
+            raise Exception('Invalid output dimension!')
+
+        h_out, w_out = int(h_out), int(w_out)
+
+        X_reshaped = X.reshape(batch_size * channels, 1, height, width)
+        X_col = im2col_indices(X_reshaped, self.pool_size, self.pool_size, padding=0, stride=self.stride)
+
+        max_idx = np.argmax(X_col, axis=0)
+        out = X_col[max_idx, range(max_idx.size)]
+
+        out = out.reshape(h_out, w_out, batch_size, channels)
+        out = out.transpose(2, 0, 1, 3)
+
+        return out
 
     def backward(self, d_out):
-        # TODO: Implement maxpool backward pass
+        # Implement maxpool backward pass
         batch_size, height, width, channels = self.X.shape
-        raise Exception("Not implemented!")
+        X = self.X.transpose(0, 3, 1, 2)
+
+        X_reshaped = X.reshape(batch_size * channels, 1, height, width)
+        X_col = im2col_indices(X_reshaped, self.pool_size, self.pool_size, padding=0, stride=self.stride)
+        dX_col = np.zeros_like(X_col)
+
+        d_out_flat = d_out.transpose(1, 2, 0, 3).ravel()
+        max_idx = np.argmax(X_col, axis=0)
+        dX_col[max_idx, range(max_idx.size)] = d_out_flat
+
+        dX = col2im_indices(dX_col,
+                            (batch_size * channels, 1, height, width),
+                            self.pool_size,
+                            self.pool_size,
+                            padding=0,
+                            stride=self.stride)
+
+        return dX.reshape(X.shape).transpose(0, 2, 3, 1)
 
     def params(self):
         return {}
